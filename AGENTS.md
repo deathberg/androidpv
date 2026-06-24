@@ -41,8 +41,14 @@ This branch ships a real, building integration:
   **You must run `git submodule update --init --recursive`** after checkout or the build fails.
 - **SuSFS** = `simonpunk/susfs4ksu` `kernel-4.14` (v1.5.5): the `50_add_susfs_in_kernel-4.14.patch` is
   already applied to the tree, and `fs/susfs.c` / `include/linux/susfs*.h` are committed.
-- **Hooks**: KSU uses kprobe hooks (`CONFIG_KSU_KPROBES_HOOK=y`, needs `CONFIG_KPROBES=y`). The optional
-  `SUS_SU` runtime toggle needs `CONFIG_KPROBE_EVENTS`/`FTRACE`, which are intentionally left off (perf).
+- **Hooks**: KSU uses **manual hooks + LSM**, NOT kprobe syscall hooks. On this SM8150 4.14 the arm64
+  kprobe single-step machinery is broken (`KSU_KPROBES_HOOK=y` panics ~30-45s after boot with
+  `Unrecoverable kprobe detected` / `kernel BUG at arch/arm64/kernel/probes/kprobes.c:293` on
+  `sys_faccessat`/`sys_execve`). So `CONFIG_KSU_KPROBES_HOOK` is **off**; KSU core (prctl/setuid/rename)
+  goes through `CONFIG_KSU_LSM_SECURITY_HOOKS=y` (`security_add_hooks`), and manual `ksu_handle_*` calls
+  are inserted in `fs/exec.c` (do_execve/compat_do_execve), `fs/open.c` (faccessat), `fs/read_write.c`
+  (read), `fs/stat.c` (newfstatat) and `drivers/input/input.c` (safe-mode). Do NOT re-enable
+  `KSU_KPROBES_HOOK`. `CONFIG_KPROBES=y` is kept but unused by KSU.
 - `vayu_defconfig` enables `CONFIG_KSU`, `CONFIG_KSU_KPROBES_HOOK` and the full `CONFIG_KSU_SUSFS*` set.
 
 **Build gotcha (determinism):** KernelSU‑Next's `kernel/Makefile` injects `path_umount`/`can_umount` into
