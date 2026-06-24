@@ -1153,26 +1153,6 @@ void security_compute_av(struct selinux_state *state,
 				  xperms);
 	map_decision(&state->ss->map, orig_tclass, avd,
 		     policydb->allow_unknown);
-#ifdef CONFIG_KSU
-	/*
-	 * Dirty SELinux: hide root/KSU "dirty sepolicy" traces from
-	 * untrusted-app detectors (e.g. Duck Detector). Only affects
-	 * AV queries issued by untrusted/isolated apps (uid >= 10000):
-	 * the detector probes whether "fsck_untrusted sys_admin" or
-	 * "system_server execmem" are allowed; spoof them as denied.
-	 */
-	if (likely(scontext && tcontext) && current_uid().val >= 10000) {
-		const char *ttype = sym_name(policydb, SYM_TYPES,
-					     tcontext->type - 1);
-		if (ttype &&
-		    (!strcmp(ttype, "fsck_untrusted") ||
-		     (scontext->type == tcontext->type &&
-		      !strcmp(ttype, "system_server")))) {
-			avd->allowed = 0;
-			avd->auditallow = 0;
-		}
-	}
-#endif
 out:
 	read_unlock(&state->ss->policy_rwlock);
 	return;
@@ -1225,6 +1205,26 @@ void security_compute_av_user(struct selinux_state *state,
 
 	context_struct_compute_av(policydb, scontext, tcontext, tclass, avd,
 				  NULL);
+#ifdef CONFIG_KSU
+	/*
+	 * Dirty SELinux: hide root/KSU "dirty sepolicy" traces from
+	 * untrusted-app detectors that query via /sys/fs/selinux/access
+	 * (this userspace path, NOT the cached kernel AVC). Only for
+	 * untrusted/isolated apps (uid >= 10000): spoof "fsck_untrusted
+	 * sys_admin" and "system_server execmem" as denied.
+	 */
+	if (likely(scontext && tcontext) && current_uid().val >= 10000) {
+		const char *ttype = sym_name(policydb, SYM_TYPES,
+					     tcontext->type - 1);
+		if (ttype &&
+		    (!strcmp(ttype, "fsck_untrusted") ||
+		     (scontext->type == tcontext->type &&
+		      !strcmp(ttype, "system_server")))) {
+			avd->allowed = 0;
+			avd->auditallow = 0;
+		}
+	}
+#endif
  out:
 	read_unlock(&state->ss->policy_rwlock);
 	return;
