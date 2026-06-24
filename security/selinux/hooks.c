@@ -6157,6 +6157,30 @@ static int selinux_setprocattr(const char *name, void *value, size_t size)
 	int error;
 	char *str = value;
 
+#ifdef CONFIG_KSU
+	/*
+	 * Dirty SELinux: hide KSU/Magisk SELinux contexts from untrusted-app
+	 * detectors that probe context validity by writing candidate labels to
+	 * /proc/self/attr/current. For untrusted/isolated apps (uid >= 10000),
+	 * report the root-related contexts as invalid (-EINVAL).
+	 */
+	if (value && size && !strcmp(name, "current") &&
+	    current_uid().val >= 10000) {
+		static const char * const ksu_hidden_ctx[] = {
+			"u:r:ksu:s0", "u:r:ksu_file:s0", "u:r:magisk:s0",
+			"u:r:magisk_file:s0", "u:r:magisk_daemon:s0", NULL
+		};
+		int i;
+
+		for (i = 0; ksu_hidden_ctx[i]; i++) {
+			size_t l = strlen(ksu_hidden_ctx[i]);
+
+			if (size >= l && !strncmp(str, ksu_hidden_ctx[i], l))
+				return -EINVAL;
+		}
+	}
+#endif
+
 	/*
 	 * Basic control over ability to set these attributes at all.
 	 */
