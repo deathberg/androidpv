@@ -47,6 +47,7 @@
 #include <linux/errno.h>
 #include <linux/in.h>
 #include <linux/sched.h>
+#include <linux/cred.h>
 #include <linux/audit.h>
 #include <linux/mutex.h>
 #include <linux/flex_array.h>
@@ -1152,6 +1153,26 @@ void security_compute_av(struct selinux_state *state,
 				  xperms);
 	map_decision(&state->ss->map, orig_tclass, avd,
 		     policydb->allow_unknown);
+#ifdef CONFIG_KSU
+	/*
+	 * Dirty SELinux: hide root/KSU "dirty sepolicy" traces from
+	 * untrusted-app detectors (e.g. Duck Detector). Only affects
+	 * AV queries issued by untrusted/isolated apps (uid >= 10000):
+	 * the detector probes whether "fsck_untrusted sys_admin" or
+	 * "system_server execmem" are allowed; spoof them as denied.
+	 */
+	if (likely(scontext && tcontext) && current_uid().val >= 10000) {
+		const char *ttype = sym_name(policydb, SYM_TYPES,
+					     tcontext->type - 1);
+		if (ttype &&
+		    (!strcmp(ttype, "fsck_untrusted") ||
+		     (scontext->type == tcontext->type &&
+		      !strcmp(ttype, "system_server")))) {
+			avd->allowed = 0;
+			avd->auditallow = 0;
+		}
+	}
+#endif
 out:
 	read_unlock(&state->ss->policy_rwlock);
 	return;
